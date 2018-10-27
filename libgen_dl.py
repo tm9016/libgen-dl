@@ -1,9 +1,10 @@
+#! /usr/bin/env python
 """
 This little tool lets your search for and download books from libgen.io
 
 Author:     Tyler Melton
 Created:    10/25/2018
-Modified:   10/25/2018
+Modified:   10/27/2018
 """
 
 """
@@ -24,8 +25,6 @@ from requests import Session
 MAIN
 """
 
-url_ads = "http://download1.libgen.io/ads.php"
-
 class LibgenSession(Session):
     def __init__(self):
         """
@@ -35,9 +34,6 @@ class LibgenSession(Session):
 
         # Run the Session init
         super().__init__()
-
-        # Get config
-        #self._config = LibgenConfig()
 
         # Headers in case the site checks UA
         self._header_cache_control = "no-cache"
@@ -59,30 +55,33 @@ class LibgenSession(Session):
         """
 
         # GET URL
-        url = f"http://download1.libgen.io/ads.php?md5={md5}"
+        ads_url = f"http://libgen.io/ads.php?md5={md5}"
 
         # Make the request
-        res = self.get(url)
+        ads_res = self.get(ads_url)
 
         # Check return status
-        if res.status_code != 200:
+        if ads_res.status_code != 200:
             raise Exception("Error retrieving file!")
 
         # Else, load up html
         dl_url = ""
-        soup = BeautifulSoup(res.text, "html.parser")
+        soup = BeautifulSoup(ads_res.text, "html.parser")
         for tag in soup.find_all("a"):
             if tag.string == "GET":
                 dl_url = tag["href"]
 
-        # Get filename from html
-        filename = "outfile"
-        tag = soup.find(id="textarea-example")
-        if tag:
-            filename = tag["value"]
-
         # Retrieve the book
         dl_res = self.get(dl_url)
+
+        # Get filename from response header
+        filename = "outfile"
+
+        fn_hdr = dl_res.headers.get("Content-Disposition")
+        fn_re = re.compile(r".*filename=\"(.*\..*)\"$")
+        fn_m = fn_re.match(fn_hdr)
+        if len(fn_m.groups()) > 0:
+            filename = fn_m.group(1)
 
         # Check return status
         if dl_res.status_code != 200:
@@ -96,19 +95,19 @@ class LibgenSession(Session):
         print("\nGot it!\n")
         print(f"\nSaved as: {filename}\n\n")
 
-    def search_books(self, query):
+    def get_search_params(self, query):
         """
-        Uses the libgen API to search for a given string.
+        Builds a dictionary of search parameters with default
+        values and the provided search query.
 
-        :param query: The string to search
-        :return: A dictionary of names and md5 hashes
+        :param query: The search query
+        :return: A dictionary of parameters to provide to requests
         """
 
-        # Unencoded query string
-        query_params = {
+        return {
             "req": query,
-            #"lg_topic": "libgen",
-            #"open": "0",
+            "lg_topic": "libgen",
+            # "open": "0",
             "view": "simple",
             "res": "100",
             "phrase": "1",
@@ -117,17 +116,42 @@ class LibgenSession(Session):
             "sortmode": "DESC"
         }
 
-        # Search
-        search_url = "http://libgen.io/search.php"
-        search_res = self.get(search_url, params=query_params)
+    def get_search_result(self, url, params):
+        """
+        Performs a search on libgen.io and returns the
+        HTTP response. Validates the response before
+        returning.
+
+        :param url: The search url
+        :param params: The search parameters (a dictionary)
+        :return: HTTP response object
+        """
+
+        # Run the search
+        res = self.get(url=url, params=params)
 
         # Check return status
-        if search_res.status_code != 200:
-            pprint(f"\n\nStatus Code: {search_res.status_code}")
-            pprint(f"\nReason: {search_res.reason}")
-            pprint(f"\nRequest: {search_res.url}")
-            pprint(f"\nContent: {search_res.content}\n\n")
+        if res.status_code != 200:
+            pprint(f"\n\nStatus Code: {res.status_code}")
+            pprint(f"\nReason: {res.reason}")
+            pprint(f"\nRequest: {res.url}")
+            pprint(f"\nContent: {res.content}\n\n")
             raise Exception("Failed to retrieve search results!")
+
+        return res
+
+    def search_books(self, query):
+        """
+        Uses the libgen API to search for a given string.
+
+        :param query: The string to search
+        :return: A dictionary of names and md5 hashes
+        """
+
+        # Get params and run search
+        search_params = self.get_search_params(query)
+        search_url = "http://libgen.io/search.php"
+        search_res = self.get_search_result(search_url, search_params)
 
         # Parse html
         soup = BeautifulSoup(search_res.text, "html.parser")
@@ -141,6 +165,32 @@ class LibgenSession(Session):
 
         # For each useful row, create a LibgenBook
         rows = table.findChildren("tr")
+
+        # Get the column headers and their positions
+        header_row = rows[0].findChildren('td')
+        key_offsets = {}
+        for i in range(len(header_row)):
+            if header_row[i].string == "ID":
+                key_offsets.update({"id": i})
+            elif header_row[i].string == "Author(s)":
+                key_offsets.update({"authors": i})
+            elif header_row[i].string == "Title":
+                key_offsets.update({"title": i})
+            elif header_row[i].string == "Publisher":
+                key_offsets.update({"publisher": i})
+            elif header_row[i].string == "Year":
+                key_offsets.update({"year": i})
+            elif header_row[i].string == "Pages":
+                key_offsets.update({"pages": i})
+            elif header_row[i].string == "Language":
+                key_offsets.update({"language": i})
+            elif header_row[i].string == "Size":
+                key_offsets.update({"size": i})
+            elif header_row[i].string == "Extension":
+                key_offsets.update({"extension": i})
+            else:
+                continue
+
         select_num = 1
         for i in range(2, len(rows)):
 
@@ -155,32 +205,36 @@ class LibgenSession(Session):
             select_num = select_num + 1
 
             # Set ID
-            book.id = data[0].get_text()
+            book.id = data[key_offsets["id"]].string
 
             # Get authors
-            for a in data[1].findChildren("a"):
-               book.authors.append(a.get_text())
+            for a in data[key_offsets["authors"]].findChildren("a"):
+                book.authors.append(a.string)
 
             # Get title
-            book.title = data[2].get_text()
+            book.title = data[key_offsets["title"]].get_text()
 
             # Get publisher
-            book.publisher = data[3].get_text()
+            book.publisher = data[key_offsets["publisher"]].string
 
             # Get year
-            book.year = data[4].get_text()
+            book.year = data[key_offsets["year"]].string
+
+            # Get extension
+            book.extension = data[key_offsets["extension"]].string
 
             # Get MD5
-            for dr in data:
-                for d in dr.findChildren("a"):
-                    if "title" in d.attrs:
-                        if d.attrs["title"] == "Libgen.io":
-                            str = d.attrs["href"]
+            for i in range(key_offsets["extension"]+1, len(data)):
+                md5_td = data[i]
+                md5_links = md5_td.findChildren("a")
+                for link in md5_links:
+                    if "title" in link.attrs and link.attrs["title"] == "Libgen.io":
+                        md5_str = link.attrs["href"]
+                        md5_re = re.compile(r".*md5=(.*)")
+                        md5_m = md5_re.match(md5_str)
+                        book.md5 = md5_m.group(1)
 
-                            rx = re.compile(".*md5=(.*)")
-                            m = rx.match(str)
-
-                            book.md5 = m.group(1)
+            # Add book to the list
             books_found.append(book)
 
         # Return results
@@ -203,63 +257,69 @@ class LibgenBook:
         self.authors = []
         self.publisher = ""
         self.year = ""
+        self.extension = ""
+        self.url_ads = ""
+        self.url_dl = ""
 
     def __str__(self):
-        stri = f"({self.num}) => "
-        stri = f"{stri}Title: {self.title}"
-        stri = f"{stri} (Year: {self.year})\n"
+        s = f"({self.num}) => "
+        s = f"{s}Title: {self.title}"
+        s = f"{s} (Year: {self.year})"
+        s = f"{s} (EXT: {self.extension})"
 
-        return stri
+        return s
 
 
-keep_going = True
-while keep_going:
 
-    # Create a new session
-    s = LibgenSession()
+def run():
+    keep_going = True
+    while keep_going:
 
-    # Prompt user for search string
-    qstr = ""
-    qstr = input("Enter a search string: ")
+        # Create a new session
+        s = LibgenSession()
 
-    # Perform search
-    if qstr == "":
-        exit(0)
-    books = s.search_books(qstr)
+        # Prompt user for search string
+        qstr = ""
+        qstr = input("Enter a search string: ")
 
-    # Display results
-    for book in books:
-        print(book)
+        # Perform search
+        if qstr == "":
+            exit(0)
+        books = s.search_books(qstr)
 
-    # Allow user to choose a book
-    chosen = False
-    choice = -1
-    while not chosen:
-        choice = int(input("Enter the number of the book you want: "))
-        if 0 <= choice <= len(books):
-            chosen = True
+        # Display results
+        for book in books:
+            print(book)
 
-    # Get output directory
-    outDir = ""
-    while outDir == "":
-        outDir = input("Enter the output directory: ")
+        # Allow user to choose a book
+        chosen = False
+        choice = -1
+        while not chosen:
+            choice = int(input("Enter the number of the book you want: "))
+            if 1 <= choice <= len(books):
+                chosen = True
 
-    # Download the book
-    s.get_book(books[choice].md5, outDir)
+        # Get output directory
+        out_dir = ""
+        while out_dir == "":
+            out_dir = input("Enter the output directory: ")
 
-    keep_prompting = True
-    while keep_prompting:
-        # Run again?
-        res = input("Search again (y/n)? ")
+        # Download the book
+        s.get_book(books[choice-1].md5, out_dir)
 
-        if res == "n":
-            keep_prompting = False
-            keep_going = False
-            print("\n\n")
-        elif res == "y":
-            keep_prompting = False
-            keep_going = True
-            print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+        keep_prompting = True
+        while keep_prompting:
+            # Run again?
+            res = input("Search again (y/n)? ")
 
-# #s.get_book("C5FA82CB29E253ECD748D846A44FC620", "/Users/tylermelton/Desktop/")
-# s.search_books("networking")
+            if res == "n":
+                keep_prompting = False
+                keep_going = False
+                print("\n\n")
+            elif res == "y":
+                keep_prompting = False
+                keep_going = True
+                print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+
+
+run()
