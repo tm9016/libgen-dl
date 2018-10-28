@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 """
 This little tool lets your search for and download books from libgen.io
 
@@ -13,12 +13,18 @@ IMPORTS
 
 # Full package imports
 import re
-import urllib3
+import os
 
 # Specific imports
 from pprint import pprint
 from bs4 import BeautifulSoup
 from requests import Session
+
+
+"""
+CONSTANTS
+"""
+DEFAULT_OUT_DIR = os.environ.get('HOME')
 
 
 """
@@ -270,7 +276,6 @@ class LibgenBook:
         return s
 
 
-
 def run():
     keep_going = True
     while keep_going:
@@ -279,7 +284,6 @@ def run():
         s = LibgenSession()
 
         # Prompt user for search string
-        qstr = ""
         qstr = input("Enter a search string: ")
 
         # Perform search
@@ -295,17 +299,20 @@ def run():
         chosen = False
         choice = -1
         while not chosen:
-            choice = int(input("Enter the number of the book you want: "))
-            if 1 <= choice <= len(books):
-                chosen = True
+            choice = [int(x) for x in (input("Enter the number of the book you want: ").split())]
+            for c in choice:
+                if 1 <= c <= len(books):
+                    chosen = True
 
         # Get output directory
-        out_dir = ""
-        while out_dir == "":
-            out_dir = input("Enter the output directory: ")
+        out_dir = input("Enter the output directory: ")
+        if out_dir == "":
+            print("\nNo output directory provided! Using $HOME/Desktop...")
+            out_dir = f"{DEFAULT_OUT_DIR}/Desktop"
 
         # Download the book
-        s.get_book(books[choice-1].md5, out_dir)
+        for c in choice:
+            s.get_book(books[c-1].md5, out_dir)
 
         keep_prompting = True
         while keep_prompting:
@@ -322,4 +329,6 @@ def run():
                 print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 
 
-run()
+# Allow standalone execution
+if __name__ == "__main__":
+    run()
