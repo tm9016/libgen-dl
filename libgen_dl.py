@@ -14,6 +14,7 @@ IMPORTS
 # Full package imports
 import re
 import os
+import time
 
 # Specific imports
 from pprint import pprint
@@ -51,12 +52,13 @@ class LibgenSession(Session):
             "Cache-Control": self._header_cache_control
         })
 
-    def get_book(self, md5, out_dir):
+    def get_book(self, md5, out_dir, filename=""):
         """
         Downloads the book
 
         :param md5: The md5 hash of the desired book
-        :param filename: The output file (full path)
+        :param filename: (Optional) The output file name
+        :param out_dir: The output directory
         :return:
         """
 
@@ -68,7 +70,7 @@ class LibgenSession(Session):
 
         # Check return status
         if ads_res.status_code != 200:
-            raise Exception("Error retrieving file!")
+            raise Exception("Error retrieving key!")
 
         # Else, load up html
         dl_url = ""
@@ -80,14 +82,13 @@ class LibgenSession(Session):
         # Retrieve the book
         dl_res = self.get(dl_url)
 
-        # Get filename from response header
-        filename = "outfile"
-
+        # Get filename from response header if available
         fn_hdr = dl_res.headers.get("Content-Disposition")
-        fn_re = re.compile(r".*filename=\"(.*\..*)\"$")
-        fn_m = fn_re.match(fn_hdr)
-        if len(fn_m.groups()) > 0:
-            filename = fn_m.group(1)
+        if isinstance(fn_hdr, str):
+            fn_re = re.compile(r".*filename=\"(.*\..*)\"$")
+            fn_m = fn_re.match(fn_hdr)
+            if len(fn_m.groups()) > 0:
+                filename = fn_m.group(1)
 
         # Check return status
         if dl_res.status_code != 200:
@@ -307,12 +308,14 @@ def run():
         # Get output directory
         out_dir = input("Enter the output directory: ")
         if out_dir == "":
-            print("\nNo output directory provided! Using $HOME/Desktop...")
             out_dir = f"{DEFAULT_OUT_DIR}/Desktop"
+            print(f"\nNo output directory provided! Using {out_dir}...")
 
         # Download the book
         for c in choice:
-            s.get_book(books[c-1].md5, out_dir)
+            b = books[c-1]
+            fn = f"{b.title}.{b.extension}"
+            s.get_book(b.md5, out_dir, fn)
 
         keep_prompting = True
         while keep_prompting:
