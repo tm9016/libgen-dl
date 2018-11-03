@@ -23,12 +23,6 @@ from requests import Session
 
 
 """
-CONSTANTS
-"""
-DEFAULT_OUT_DIR = os.environ.get('HOME')
-
-
-"""
 MAIN
 """
 
@@ -277,7 +271,109 @@ class LibgenBook:
         return s
 
 
+def prompt_user():
+    """
+    Ask the user whether or not to end the script.
+    """
+
+    keep_prompting = True
+    while keep_prompting:
+        # Run again?
+        res = input("Search again (y/n)? ")
+
+        if res == "n":
+            keep_prompting = False
+            print("\n\n")
+            return False
+        elif res == "y":
+            keep_prompting = False
+            print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+            return True
+
+
+def get_search():
+    """
+    Prompt the user for a search term. Handle edge cases.
+    """
+
+    # Min search length
+    MIN_STR_LEN = 3
+
+    # Keep asking until a satisfactory answer is provided. Ctrl-C to
+    # cancel and exit (for now).
+    while True:
+        s_str = input("Enter a search string: ")
+
+        # If string is too short, fail and ask again
+        if len(s_str) < MIN_STR_LEN:
+            err_str = f"\nSearch string too short! Must be"
+            err_str = f"{err_str} {MIN_STR_LEN} characters or less.\n"
+            print(err_str)
+        else:
+            return s_str
+
+
+def get_book_selection(books):
+    """
+    Show the user a list of books and ask for a selection.
+    """
+
+    # Display the books
+    for book in books:
+        print(book)
+
+    # Allow user to choose a book
+    chosen = False
+    while not chosen:
+        choices = [int(x) for x in (input("Enter the number of the book you want: ").split())]
+        for c in choices:
+            if 1 <= c <= len(books):
+                chosen = True
+
+    return choices
+
+
+def worker_download(book, out_dir):
+    """
+    A worker that runs a single download. This is to be run alongside
+    other worker_download()'s in multiple threads.
+    """
+
+
+def run_threads():
+    """
+    Main loop. Allows the user to search for books and download them
+    in sets. Uses threads to keep the max concurrent downloads
+    running.
+    """
+
+    # Default output directory
+    DEFAULT_OUT_DIR = f"{os.environ.get('HOME')}/Desktop"
+
+    # Set up a new session
+    s = LibgenSession()
+
+    # Get the search string
+    s_str = get_search()
+
+    # Search for the given string and store the books in memory
+    books = s.search_books(s_str)
+
+    # Get book choices
+    choices = get_book_selection(books)
+
+    # Get output directory
+    out_dir = input("Enter the output directory: ")
+    if out_dir == "":
+        out_dir = DEFAULT_OUT_DIR
+        print(f"\nNo output directory provided! Using {out_dir}...")
+
+
 def run():
+
+    # Default output directory
+    DEFAULT_OUT_DIR = f"{os.environ.get('HOME')}/Desktop"
+
     keep_going = True
     while keep_going:
 
@@ -308,7 +404,7 @@ def run():
         # Get output directory
         out_dir = input("Enter the output directory: ")
         if out_dir == "":
-            out_dir = f"{DEFAULT_OUT_DIR}/Desktop"
+            out_dir = DEFAULT_OUT_DIR
             print(f"\nNo output directory provided! Using {out_dir}...")
 
         # Download the book
