@@ -7,24 +7,24 @@ Created:    10/25/2018
 Modified:   10/27/2018
 """
 
-"""
-IMPORTS
-"""
-
 # Full package imports
 import re
 import os
+import sys
 import time
+import threading
 
 # Specific imports
 from pprint import pprint
 from bs4 import BeautifulSoup
 from requests import Session
+from queue import Queue
 
 
 """
-MAIN
+Classes
 """
+
 
 class LibgenSession(Session):
     def __init__(self):
@@ -271,6 +271,11 @@ class LibgenBook:
         return s
 
 
+"""
+Main
+"""
+
+
 def prompt_user():
     """
     Ask the user whether or not to end the script.
@@ -333,11 +338,22 @@ def get_book_selection(books):
     return choices
 
 
-def worker_download(book, out_dir):
+def worker_download(q, session, out_dir):
     """
     A worker that runs a single download. This is to be run alongside
     other worker_download()'s in multiple threads.
     """
+
+    # Get next book
+    b = q.get()
+
+    # Download
+    filename = f"{b.title}.{b.extension}"
+    session.get_book(b.md5, out_dir, filename)
+
+    # End
+    q.task_done()
+    sys.exit()
 
 
 def run_threads():
@@ -349,6 +365,9 @@ def run_threads():
 
     # Default output directory
     DEFAULT_OUT_DIR = f"{os.environ.get('HOME')}/Desktop"
+
+    # Maximum concurrent downloads
+    MAX_CONC_DLS = 3
 
     # Set up a new session
     s = LibgenSession()
@@ -367,6 +386,33 @@ def run_threads():
     if out_dir == "":
         out_dir = DEFAULT_OUT_DIR
         print(f"\nNo output directory provided! Using {out_dir}...")
+
+    # Queue to hold books for download
+    q = Queue()
+
+    # Populate queue and create threads
+    dl_threads = []
+    for c in choices:
+        b = books[c-1]
+        q.put(b)
+        t = threading.Thread(target=worker_download, args=(q, s, out_dir))
+        dl_threads.append(t)
+
+    # Run threads, three at a time
+    index = 0
+    while not q.empty():
+        if threading.active_count() <= MAX_CONC_DLS:
+            dl_threads[index].start()
+            index += 1
+        time.sleep(3)
+
+    active_threads = threading.active_count()
+    while active_threads > 1:
+        time.sleep(1)
+        active_threads = threading.active_count()
+
+    if prompt_user():
+        run_threads()
 
 
 def run():
@@ -430,4 +476,4 @@ def run():
 
 # Allow standalone execution
 if __name__ == "__main__":
-    run()
+    run_threads()
