@@ -4,7 +4,7 @@ This little tool lets your search for and download books from libgen.io
 
 Author:     Tyler Melton
 Created:    10/25/2018
-Modified:   10/27/2018
+Modified:   11/04/2018
 """
 
 # Full package imports
