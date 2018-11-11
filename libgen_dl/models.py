@@ -7,6 +7,7 @@ Created:    11/06/2018
 Modified:   11/11/2018
 """
 
+import uuid
 from queue import Queue
 
 
@@ -17,6 +18,7 @@ class Book():
     """
 
     def __init__(self):
+        self.uuid = uuid.uuid1()
         self.md5 = ""
         self.id = ""
         self.title = ""
@@ -41,7 +43,28 @@ class ResultSet:
     """
 
     def __init__(self):
-        
+
+        # List of books found
+        self.results = []
+
+    def add(self, book):
+        """
+        Add a book to the results set
+
+        :param book: A libgen_dl Book to add
+        :return:
+        """
+
+        self.results.append(book)
+
+    def reset(self):
+        """
+        Clear the results list
+
+        :return:
+        """
+
+        self.results = []
 
 
 class DownloadQueue(Queue):
